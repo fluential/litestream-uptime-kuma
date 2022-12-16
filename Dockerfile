@@ -24,6 +24,8 @@ RUN ls -la && mv uptime-kuma-$UPTIME_KUMA_VERSION uptime-kuma
 
 FROM node
 
+RUN apt-get update && apt-get -y install iputils-ping wget
+
 ENV APP_HOME /app
 ENV LITESTREAM_BUCKET uptime-kuma
 ENV LITESTREAM_PATH uptime-kuma-db
@@ -33,6 +35,9 @@ ADD gen-config.sh "$APP_HOME/gen-config.sh"
 ENV DATA_DIR "${APP_HOME}/fs/"
 
 WORKDIR "$APP_HOME"
+
+RUN apt-get update && apt-get -y install iputils-ping wget
+RUN apt-get clean autoclean;apt-get autoremove --yes;rm -rf /var/lib/{apt,dpkg,cache,log}/
 
 COPY --from=builder "$APP_HOME" "$APP_HOME"
 
