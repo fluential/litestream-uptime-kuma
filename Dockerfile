@@ -41,4 +41,4 @@ RUN apt-get clean autoclean;apt-get autoremove --yes;rm -rf /var/lib/{apt,dpkg,c
 
 COPY --from=builder "$APP_HOME" "$APP_HOME"
 
-CMD /bin/bash -xc 'pwd ; ls -la ; cd uptime-kuma; ../gen-config.sh ; if [[ -n $LITESTREAM_URL ]] ; then ../litestream restore -v -if-replica-exists -config ../litestream.yml "$DATA_DIR"/kuma.db ; exec ../litestream replicate -config ../litestream.yml -exec "node server/server.js"; else exec node server/server.js;fi'
+CMD /bin/bash -xc 'pwd ; ls -la ; cd uptime-kuma; ../gen-config.sh ; if [[ -n $LITESTREAM_URL ]] ; then ../litestream restore -v -if-replica-exists -config ../litestream.yml "$DATA_DIR"/kuma.db ; exec ../litestream replicate -config ../litestream.yml -exec "/usr/bin/timeout -k 15s 1h node server/server.js"; else exec /usr/bin/timeout -k 15s 1h node server/server.js;fi'
