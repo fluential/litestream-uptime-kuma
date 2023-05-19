@@ -8,6 +8,7 @@ ENV LITESTREAM_VERSION $LITESTREAM_VERSION
 ENV LITESTREAM_BUCKET uptime-kuma
 ENV LITESTREAM_PATH uptime-kuma-db
 ENV DATA_DIR "${APP_HOME}/fs/"
+ENV OOM_TIMEOUT="15m"
 
 RUN mkdir -p "$APP_HOME"
 WORKDIR "$APP_HOME"
@@ -43,4 +44,4 @@ RUN apt-get clean autoclean;apt-get autoremove --yes;rm -rf /var/lib/{apt,dpkg,c
 
 COPY --from=builder "$APP_HOME" "$APP_HOME"
 
-CMD /bin/bash -xc 'pwd ; ls -la ; cd uptime-kuma; ../gen-config.sh ; if [[ -n $LITESTREAM_URL ]] ; then ../litestream restore -v -if-replica-exists -config ../litestream.yml "$DATA_DIR"/kuma.db ; exec ../litestream replicate -config ../litestream.yml -exec "/usr/bin/timeout -k 15s 1h node server/server.js"; else exec /usr/bin/timeout -k 15s 1h node server/server.js;fi'
+CMD /bin/bash -xc 'pwd ; ls -la ; cd uptime-kuma; ../gen-config.sh ; if [[ -n $LITESTREAM_URL ]] ; then ../litestream restore -v -if-replica-exists -config ../litestream.yml "$DATA_DIR"/kuma.db ; exec ../litestream replicate -config ../litestream.yml -exec "/usr/bin/timeout -k 15s $OOM_TIMEOUT node server/server.js"; else exec /usr/bin/timeout -k 15s $OOM_TIMEOUT node server/server.js;fi'
