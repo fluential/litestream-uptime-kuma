@@ -16,6 +16,8 @@ dbs:
         endpoint: "$LITESTREAM_URL"
         access-key-id: "$LITESTREAM_ACCESS_KEY_ID"
         secret-access-key: "$LITESTREAM_SECRET_ACCESS_KEY"
+        snapshot-interval: 12h
+        retention: 72h
 EOF
 
 echo "Done Litestream config."
