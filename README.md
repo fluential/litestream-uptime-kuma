@@ -40,6 +40,16 @@ docker run --rm -p 3001:3001 \
 | `LITESTREAM_SNAPSHOT_INTERVAL` | `1h` | How often to take full snapshots |
 | `DATA_DIR` | `/app/data` | Database directory inside container |
 
+## Testing
+
+Run the end-to-end test suite (requires Docker):
+
+```
+make test
+```
+
+This builds the image, starts MinIO + Uptime Kuma via Docker Compose, runs the socket.io test (admin setup, login, add monitor, heartbeat, S3 replication check), and tears everything down.
+
 ## Running without Litestream
 
 Omit `LITESTREAM_URL` and the container runs Uptime Kuma standalone (no replication). Useful for local development.
