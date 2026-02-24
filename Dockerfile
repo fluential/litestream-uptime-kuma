@@ -1,43 +1,74 @@
-FROM node as builder
-ARG UPTIME_KUMA_VERSION=1.21.0
-ARG LITESTREAM_VERSION=0.3.9
+# =============================================================================
+# Stage 1: Builder — download and prepare all dependencies
+# =============================================================================
+FROM node:22-slim AS builder
 
-ENV APP_HOME /app
-ENV UPTIME_KUMA_VERSION $UPTIME_KUMA_VERSION
-ENV LITESTREAM_VERSION $LITESTREAM_VERSION
-ENV DATA_DIR "${APP_HOME}/fs/"
+ARG UPTIME_KUMA_VERSION=2.1.3
+ARG LITESTREAM_VERSION=0.5.9
+ARG TARGETARCH
 
-RUN env ; mkdir -p "$APP_HOME"
-WORKDIR "$APP_HOME"
+ENV APP_HOME=/app
+WORKDIR $APP_HOME
 
-RUN apt-get update && apt-get -y install iputils-ping wget
-RUN rm -rf "$APP_HOME"/uptime-kuma* && wget -qO uptime-kuma-$UPTIME_KUMA_VERSION.tar.gz https://github.com/louislam/uptime-kuma/archive/refs/tags/$UPTIME_KUMA_VERSION.tar.gz && tar xzf uptime-kuma-$UPTIME_KUMA_VERSION.tar.gz
-RUN rm -rf "$APP_HOME"/litestream* && wget -q https://github.com/benbjohnson/litestream/releases/download/v$LITESTREAM_VERSION/litestream-v$LITESTREAM_VERSION-linux-amd64-static.tar.gz && tar xzf litestream-v$LITESTREAM_VERSION-linux-amd64-static.tar.gz
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates wget && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p "$APP_HOME/fs"
-RUN cd uptime-kuma-$UPTIME_KUMA_VERSION && npm ci --production && npm run download-dist
+# Download and extract Litestream (multi-arch)
+RUN ARCH=$(case "$TARGETARCH" in arm64) echo "arm64" ;; *) echo "x86_64" ;; esac) && \
+    wget -q -O litestream.tar.gz \
+      "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-${LITESTREAM_VERSION}-linux-${ARCH}.tar.gz" && \
+    tar xzf litestream.tar.gz && \
+    rm litestream.tar.gz && \
+    chmod +x litestream
 
-RUN rm -rf "$DATA_DIR" && mkdir -p "$DATA_DIR"
-RUN ls -la && mv uptime-kuma-$UPTIME_KUMA_VERSION uptime-kuma
+# Download and extract Uptime Kuma
+RUN wget -q -O uptime-kuma.tar.gz \
+      "https://github.com/louislam/uptime-kuma/archive/refs/tags/${UPTIME_KUMA_VERSION}.tar.gz" && \
+    tar xzf uptime-kuma.tar.gz && \
+    mv "uptime-kuma-${UPTIME_KUMA_VERSION}" uptime-kuma && \
+    rm uptime-kuma.tar.gz
 
-FROM node
+# Install production dependencies and download pre-built frontend
+RUN cd uptime-kuma && \
+    npm ci --omit=dev && \
+    npm run download-dist
 
-RUN apt-get update && apt-get -y install iputils-ping wget
+# =============================================================================
+# Stage 2: Runtime — minimal production image
+# =============================================================================
+FROM node:22-slim
 
-ENV APP_HOME /app
-ENV LITESTREAM_BUCKET uptime-kuma
-ENV LITESTREAM_PATH uptime-kuma-db
+ENV APP_HOME=/app
+ENV DATA_DIR=$APP_HOME/data
+ENV NODE_ENV=production
 
-ADD gen-config.sh "$APP_HOME/gen-config.sh"
+WORKDIR $APP_HOME
 
-ENV DATA_DIR "${APP_HOME}/fs/"
-ENV OOM_TIMEOUT "15m"
+# Install runtime dependencies only
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      iputils-ping && \
+    rm -rf /var/lib/apt/lists/*
 
-WORKDIR "$APP_HOME"
+# Copy application files from builder
+COPY --from=builder $APP_HOME/litestream $APP_HOME/litestream
+COPY --from=builder $APP_HOME/uptime-kuma $APP_HOME/uptime-kuma
 
-RUN apt-get update && apt-get -y install iputils-ping wget
-RUN apt-get clean autoclean;apt-get autoremove --yes;rm -rf /var/lib/{apt,dpkg,cache,log}/
+# Copy scripts
+COPY gen-config.sh $APP_HOME/gen-config.sh
+COPY run.sh $APP_HOME/run.sh
+RUN chmod +x $APP_HOME/gen-config.sh $APP_HOME/run.sh
 
-COPY --from=builder "$APP_HOME" "$APP_HOME"
+# Create data directory
+RUN mkdir -p "$DATA_DIR"
 
-CMD /bin/bash -xc 'env ; pwd ; ls -la ; cd uptime-kuma; ../gen-config.sh ; if [[ -n $LITESTREAM_URL ]] ; then ../litestream restore -v -if-replica-exists -config ../litestream.yml "$DATA_DIR"/kuma.db ; exec ../litestream replicate -config ../litestream.yml -exec "/usr/bin/timeout -k 15s $OOM_TIMEOUT node server/server.js"; else exec /usr/bin/timeout -k 15s $OOM_TIMEOUT node server/server.js;fi'
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -sf http://localhost:3001/api/entry-page || exit 1
+
+CMD ["/app/run.sh"]
